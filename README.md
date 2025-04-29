@@ -66,12 +66,9 @@ You are welcome to use and adapt them for your own workflows!
 
 # ⚡ Installation
 
-## Recommended: via ComfyUI-Manager
-1. Open ComfyUI-Manager.
-2. Search for `MultiModel1` (or your package name) and click "Install".
 
 ## Manual Install
-1. Copy the `MultiModel1` folder to `ComfyUI/custom_nodes/`.
+1. Copy the `MultiModel` folder to `ComfyUI/custom_nodes/`.
 2. Restart ComfyUI.
 
 ---
