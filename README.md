@@ -1,5 +1,5 @@
 <h1 align="center">
-    MultiModel1 for ComfyUI
+    MultiModel for ComfyUI
     <br>
     <sub><sup><i>Flexible multi-model workflows, prompt engineering, and style management for ComfyUI</i></sup></sub>
     <br>
@@ -60,7 +60,7 @@ You are welcome to use and adapt them for your own workflows!
 
 - Styles are stored in the `Styles` folder inside this package.
 - For dynamic style selection, the API endpoint `/multi_model/get_style_names` is used.
-- A style is a JSON file containing an array of objects, each with `name`, `prompt`, and `negative_prompt` fields.
+- A style is a JSON or YAML file containing an array of objects, each with `name`, `prompt`, and `negative_prompt` fields.
 
 ---
 
