@@ -93,31 +93,38 @@ function findTargetNodes() {
     return HubNodesService.getHubNodes();
 }
 
+// --- Нова функція для оновлення всіх перемикачів для всіх хабів ---
+function updateAllBypasserWidgetsForAllHubs() {
+    const allHubNodes = HubNodesService.getHubNodes();
+    allHubNodes.forEach(hubNode => {
+        updateAllBypasserWidgets(hubNode);
+    });
+}
+
 // Функція зміни режиму ОДНОГО вузла
 function setHubMode(targetNode, mode) {
     if (!targetNode) return;
     const currentMode = targetNode.mode;
-    const modeStr = mode === MODE_ALWAYS ? "ON" : "OFF";
-    
+    // const modeStr = mode === MODE_ALWAYS ? "ON" : "OFF";
+    // console.log(`[setHubMode] Перемикач вузла id=${targetNode.id} → ${modeStr}`);
     // Якщо ми вмикаємо вузол (MODE_ALWAYS), і при цьому поточний режим НЕ MODE_ALWAYS 
-    // (тобто вузол був вимкнений, а тепер ми його вмикаємо)
     if (mode === MODE_ALWAYS && currentMode !== MODE_ALWAYS) {
-        // Потрібно перевірити, чи є інші активні вузли, і вимкнути їх
         const allHubNodes = HubNodesService.getHubNodes();
         const otherActiveNodes = allHubNodes.filter(n => n.id !== targetNode.id && n.mode === MODE_ALWAYS);
-        
         if (otherActiveNodes.length > 0) {
             otherActiveNodes.forEach(node => {
+                // console.log(`[setHubMode] Вимикаємо інший перемикач id=${node.id} → OFF`);
                 node.mode = MODE_BYPASS;
             });
         }
     }
-    
-    // Змінюємо режим цільового вузла, незалежно від того, чи є інші активні вузли
     if (currentMode !== mode) {
         targetNode.mode = mode;
         app.graph.setDirtyCanvas(true, true);
+    } else {
+        // console.log(`[setHubMode] Перемикач вузла id=${targetNode.id} вже у стані ${modeStr}, зміна не потрібна.`);
     }
+    updateAllBypasserWidgetsForAllHubs();
 }
 
 // Нова функція для оновлення віджетів у всіх байпасерах для конкретного вузла
@@ -362,10 +369,10 @@ app.registerExtension({
 
                          if (!existingWidget.callback) {
                               existingWidget.callback = (value) => {
-                                  // Нова логіка: якщо перемикач вмикається, вимикаємо всі інші
-                                  // якщо вимикається - просто вимикаємо
                                   const nodeToChange = app.graph.getNodeById(targetNode.id);
-                                  if (nodeToChange) setHubMode(nodeToChange, value ? MODE_ALWAYS : MODE_BYPASS);
+                                  if (nodeToChange) {
+                                      setHubMode(nodeToChange, value ? MODE_ALWAYS : MODE_BYPASS);
+                                  }
                               };
                               widgetsChanged = true;
                          }
@@ -373,9 +380,10 @@ app.registerExtension({
                         this.addWidget(
                             "toggle", widgetName, widgetValue,
                             (value) => {
-                                // Нова логіка: дозволяємо будь-які переключення
                                 const nodeToChange = app.graph.getNodeById(targetNode.id);
-                                if (nodeToChange) setHubMode(nodeToChange, value ? MODE_ALWAYS : MODE_BYPASS);
+                                if (nodeToChange) {
+                                    setHubMode(nodeToChange, value ? MODE_ALWAYS : MODE_BYPASS);
+                                }
                                 else this.refreshWidgets();
                             },
                             { on: "ON", off: "OFF" }
