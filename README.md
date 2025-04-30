@@ -38,9 +38,6 @@ You are welcome to use and adapt them for your own workflows!
 ## DenoiseSelector
 > Simple node for selecting the denoise value.
 
-## DualTextInput
-> Two text fields for positive and negative prompts.
-
 ## ActiveModel
 > Dummy node for JavaScript-side integration (client logic).
 
