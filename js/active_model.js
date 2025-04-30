@@ -1,4 +1,3 @@
-console.log("%c[ActiveModel] JS файл завантажився! (v2-dynamic-inputs)", "color: white; background: #007acc; font-weight: bold; padding: 2px 8px; border-radius: 3px;");
 // --- Loading js/active_model.js --- v2-dynamic-inputs
 import { app } from "/scripts/app.js"; // Виправлено шлях на абсолютний
 
@@ -16,7 +15,6 @@ class ActiveModel {
     constructor() {
         // Цей вузол є переважно контейнером для дій
         this.properties = {};
-        console.log(`[${ActiveModel.title}] CONSTRUCTOR CALLED.`);
         // Спробуємо знайти та вивести вузли одразу при створенні
         this.logTargetNodeNames();
     }
@@ -27,14 +25,7 @@ class ActiveModel {
 
     // Функція для пошуку та логування імен цільових вузлів
     logTargetNodeNames() {
-        console.log(`[${ActiveModel.title}] Searching for nodes of type '${TARGET_NODE_TYPE}'...`);
         const nodes = app.graph._nodes.filter(node => node.type === TARGET_NODE_TYPE);
-        console.log(`[${ActiveModel.title}] Found ${nodes.length} nodes:`);
-        if (nodes.length > 0) {
-             nodes.forEach(n => console.log(`   - Node ID: ${n.id}, Title: ${n.title}, Current mode: ${n.mode}`));
-        } else {
-             console.log(`   (No nodes found)`);
-        }
         return nodes; // Повертаємо для можливого використання в onAction
     }
 
@@ -42,39 +33,27 @@ class ActiveModel {
     setHubsMode(mode) {
         const nodes = this.logTargetNodeNames();
         if (nodes.length === 0) {
-            console.log(`[${ActiveModel.title}] No target nodes found to set mode.`);
             return; // Виходимо, якщо немає цільових вузлів
         }
         const modeStr = mode === MODE_ALWAYS ? "ALWAYS" : (mode === MODE_BYPASS ? "BYPASS" : mode);
-        console.log(`[${ActiveModel.title}] Attempting to set mode to ${modeStr} for ${nodes.length} nodes.`);
 
         let changed = false;
         for (const node of nodes) {
-            console.log(`  - Processing Node ID: ${node.id}, Title: ${node.title}, Current mode: ${node.mode}`);
             if (node.mode !== mode) {
                 node.mode = mode;
-                console.log(`    - Mode set to: ${node.mode}`);
                 changed = true;
-            } else {
-                console.log(`    - Mode already set to ${node.mode}. Skipping.`);
             }
         }
 
         if (changed) {
-            console.log(`[${ActiveModel.title}] Triggering canvas redraw.`);
             app.graph.setDirtyCanvas(true, true);
-        } else {
-            console.log(`[${ActiveModel.title}] No modes were changed. Skipping redraw.`);
         }
     }
 
     // Спрощена обробка дій для тестування
     onAction(action) {
-        console.log(`[${ActiveModel.title}] === onAction ENTERED === Action: ${action}`);
         // Просто логуємо знайдені вузли ще раз при виклику дії
         this.logTargetNodeNames();
-        // Логіку зміни режимів поки що прибрали
-        // if (action === "Bypass All Hubs") { ... }
     }
 
     // Цей вузол не виконує обчислень, тому onExecute може бути порожнім
@@ -92,11 +71,9 @@ class ActiveModel {
         clazz.size = [240, 50];
         clazz.category = "MultiModel"; // Змінюємо категорію на основну
 
-        console.log(`[${ActiveModel.title}] Attempting to register node type via setUp: ${clazz.type}`);
         try {
             // Реєструємо сам клас
             LiteGraph.registerNodeType(clazz.type, clazz);
-            console.log(`[${ActiveModel.title}] Node type registration via setUp SUCCESSFUL.`);
         } catch (e) {
              console.error(`[${ActiveModel.title}] Node type registration via setUp FAILED:`, e);
         }
@@ -121,7 +98,6 @@ function setHubMode(targetNode, mode) {
     if (!targetNode) return;
     const currentMode = targetNode.mode;
     const modeStr = mode === MODE_ALWAYS ? "ON" : "OFF";
-    console.log(`[${NODE_TITLE}] Setting Node ID ${targetNode.id} ('${targetNode.title}') to mode ${modeStr}`);
     
     // Якщо ми вмикаємо вузол (MODE_ALWAYS), і при цьому поточний режим НЕ MODE_ALWAYS 
     // (тобто вузол був вимкнений, а тепер ми його вмикаємо)
@@ -131,13 +107,8 @@ function setHubMode(targetNode, mode) {
         const otherActiveNodes = allHubNodes.filter(n => n.id !== targetNode.id && n.mode === MODE_ALWAYS);
         
         if (otherActiveNodes.length > 0) {
-            console.log(`[${NODE_TITLE}] Found ${otherActiveNodes.length} other active nodes, disabling them...`);
             otherActiveNodes.forEach(node => {
                 node.mode = MODE_BYPASS;
-                console.log(`[${NODE_TITLE}] Disabled node ID ${node.id} ('${node.title}')`);
-                
-                // Оновлюємо віджети всіх байпасерів для цього вузла
-                updateAllBypasserWidgets(node);
             });
         }
     }
@@ -146,9 +117,6 @@ function setHubMode(targetNode, mode) {
     if (currentMode !== mode) {
         targetNode.mode = mode;
         app.graph.setDirtyCanvas(true, true);
-        
-        // Також оновлюємо віджети для цього вузла
-        updateAllBypasserWidgets(targetNode);
     }
 }
 
@@ -156,7 +124,6 @@ function setHubMode(targetNode, mode) {
 function updateAllBypasserWidgets(targetNode) {
     if (!targetNode) return;
     
-    console.log(`[${NODE_TITLE}] Updating widgets for node ID: ${targetNode.id} in all bypassers`);
     const bypassers = HubNodesService.bypasserNodes;
     
     bypassers.forEach(bypasser => {
@@ -176,13 +143,11 @@ function updateAllBypasserWidgets(targetNode) {
             let changed = false;
             
             if (widget.value !== newValue) {
-                console.log(`[${NODE_TITLE}] Updating widget value in bypasser ID: ${bypasser.id} for node ID: ${targetNode.id} to: ${newValue}`);
                 widget.value = newValue;
                 changed = true;
             }
             
             if (widget.label !== newLabel) {
-                console.log(`[${NODE_TITLE}] Updating widget label in bypasser ID: ${bypasser.id} for node ID: ${targetNode.id} to: "${newLabel}"`);
                 widget.label = newLabel;
                 changed = true;
             }
@@ -204,7 +169,6 @@ const HubNodesService = {
 
     registerBypasserNode(node) {
         if (!this.bypasserNodes.find(n => n.id === node.id)) {
-            console.log(`[HubNodesService] Registering bypasser node ID: ${node.id}`);
             this.bypasserNodes.push(node);
             this.scheduleUpdate(`registerBypasser_${node.id}`);
         }
@@ -213,7 +177,6 @@ const HubNodesService = {
     unregisterBypasserNode(node) {
         const index = this.bypasserNodes.findIndex(n => n.id === node.id);
         if (index !== -1) {
-            console.log(`[HubNodesService] Unregistering bypasser node ID: ${node.id}`);
             this.bypasserNodes.splice(index, 1);
             // Оновлення не потрібне при видаленні самого байпасера
         } else {
@@ -228,7 +191,6 @@ const HubNodesService = {
     // --- Нові методи для сповіщень від Hub --- //
     notifyHubAdded(node) {
         if (!node) return;
-        console.log(`[HubNodesService] Hub node added notification received: ID ${node.id}`);
         if (!this.hubNodes.find(n => n.id === node.id)) {
             this.hubNodes.push(node);
             this.hubNodes.sort((a, b) => a.id - b.id); // Підтримуємо сортування
@@ -240,7 +202,6 @@ const HubNodesService = {
     
     notifyHubRemoved(node) {
         if (!node) return;
-        console.log(`[HubNodesService] Hub node removed notification received: ID ${node.id}`);
         const index = this.hubNodes.findIndex(n => n.id === node.id);
         if (index !== -1) {
             this.hubNodes.splice(index, 1);
@@ -252,33 +213,23 @@ const HubNodesService = {
 
     notifyHubRenamed(node) {
          if (!node) return;
-        console.log(`[HubNodesService] Hub node rename notification received: ID ${node.id}`);
-        // Сам список hubNodes містить посилання на об'єкти вузлів,
-        // тому оновлювати список не потрібно, зміна title вже відбулася.
-        // Просто плануємо оновлення віджетів, щоб відобразити нову назву.
         this.scheduleUpdate(`notifyHubRenamed_${node.id}`);
     },
     // --- Кінець нових методів --- //
 
     scheduleUpdate(reason = "unknown") {
-        console.log(`[HubNodesService] Scheduling update. Reason: ${reason}`);
         if (this.updateTimeout) {
             clearTimeout(this.updateTimeout);
         }
         this.updateTimeout = setTimeout(() => {
-            console.log("[HubNodesService] Timeout reached. Running update...");
             this.updateTimeout = null;
-            // Оновлення списку hubNodes більше не потрібне тут
-            // this.refreshHubNodes(); 
             this.bypasserNodes.forEach(node => {
                  if (node.refreshWidgets) {
-                    console.log(`[HubNodesService] Refreshing widgets for bypasser node ID: ${node.id}`);
                     node.refreshWidgets();
                  } else {
                      console.warn(`[HubNodesService] Bypasser node ID: ${node.id} missing refreshWidgets method.`);
                  }
             });
-             console.log("[HubNodesService] Update finished.");
         }, this.updateDelay);
     }
 };
@@ -287,7 +238,6 @@ app.registerExtension({
     name: "MultiModel.ActiveModel.ServiceDriven", // Оновлено назву розширення
 
     setup(appInstance) {
-        console.log(`[${NODE_TITLE}] === Extension setup CALLED ===`);
         // Реєструємо сервіс, щоб він був доступний іншим розширенням
         appInstance.HubNodesService = HubNodesService;
         HubNodesService.app = appInstance; 
@@ -304,8 +254,6 @@ app.registerExtension({
                 
                 // Перевіряємо, чи це наша нода ActiveModel
                 if (node.type === NODE_TYPE) {
-                    console.log(`[${NODE_TITLE}] Our node type was added to graph: ID ${node.id}`);
-                    
                     // Викликаємо обробку ноди для додавання віджетів
                     const extension = appInstance.extensions.find(ext => ext.name === "MultiModel.ActiveModel.ServiceDriven");
                     if (extension) {
@@ -315,7 +263,6 @@ app.registerExtension({
                         // Оновлюємо віджети з невеликою затримкою
                         setTimeout(() => {
                             if (node.refreshWidgets) {
-                                console.log(`[${NODE_TITLE}] Running refreshWidgets for newly added node ID: ${node.id}`);
                                 node.refreshWidgets();
                             }
                         }, 100);
@@ -324,12 +271,10 @@ app.registerExtension({
             };
             
             appInstance.graph._activemodel_onNodeAdded_attached = true;
-            console.log(`[${NODE_TITLE}] Attached our onNodeAdded handler to graph`);
         }
         
         // Початкове сканування потрібне, щоб знайти вузли, які вже існують при завантаженні
         setTimeout(() => {
-             console.log("[HubNodesService] Initial node scan after setup.");
              // Знаходимо існуючі Hub та Bypasser ноди і реєструємо їх
              let initialHubsFound = 0;
              let initialBypassersFound = 0;
@@ -347,12 +292,10 @@ app.registerExtension({
                      this.loadedGraphNode(node, appInstance);
                  }
              });
-             console.log(`[HubNodesService] Initial scan found ${initialHubsFound} hubs and ${initialBypassersFound} bypassers.`);
              
              // Додаємо окремий виклик для оновлення віджетів для всіх bypassers з більшою затримкою
              if (initialBypassersFound > 0) {
                  setTimeout(() => {
-                     console.log(`[${NODE_TITLE}] Refreshing widgets for ${initialBypassersFound} bypassers after initial scan`);
                      HubNodesService.bypasserNodes.forEach(node => {
                          if (node && node.refreshWidgets) {
                              node.refreshWidgets();
@@ -360,24 +303,19 @@ app.registerExtension({
                      });
                  }, 500);
              }
-             
-             // Оновлення віджетів запланується всередині notifyHubAdded/registerBypasserNode
         }, 500);
     },
 
     // loadedGraphNode тепер відповідає ТІЛЬКИ за конфігурацію САМОГО ActiveModel
     loadedGraphNode(node, appInstance) {
         if (node.type === NODE_TYPE) {
-            console.log(`[${NODE_TITLE}] Configuring node instance ID: ${node.id}`);
             node.app = appInstance;
             node.IS_BYPASSER_NODE = true;
             delete node.onAction; // Видаляємо, бо додамо getActions
 
             // Визначаємо refreshWidgets
             node.refreshWidgets = function() {
-                console.log(`[${NODE_TITLE} ID: ${this.id}] Running refreshWidgets...`);
                 const targetNodes = findTargetNodes(); // Отримуємо з сервісу
-                console.log(`[${NODE_TITLE} ID: ${this.id}] Got ${targetNodes.length} target nodes from service.`);
                 
                 // Додаємо детальну діагностику
                 if (targetNodes.length === 0) {
@@ -398,7 +336,6 @@ app.registerExtension({
                 // Add/Update widgets
                 targetNodes.forEach(targetNode => {
                     if (!targetNode) {
-                         console.warn(`[${NODE_TITLE} ID: ${this.id}] Found a null/undefined targetNode in the list from service. Skipping.`);
                          return; // Пропускаємо невалідні ноди
                     }
                     const widgetName = `hub_${targetNode.id}`;
@@ -483,12 +420,10 @@ app.registerExtension({
                 // Перевірка на кількість активних вузлів після оновлення віджетів
                 setTimeout(() => {
                     const activeNodes = targetNodes.filter(node => node.mode === MODE_ALWAYS);
-                    console.log(`[${NODE_TITLE} ID: ${this.id}] After refresh: ${activeNodes.length} active nodes`);
                     
                     // Якщо більше одного активного вузла, залишаємо тільки перший
                     // Але не активуємо автоматично вузли, якщо всі вимкнені
                     if (activeNodes.length > 1) {
-                        console.log(`[${NODE_TITLE} ID: ${this.id}] Multiple active nodes (${activeNodes.length}), keeping only the first one...`);
                         // Залишаємо перший вузол активним, інші вимикаємо
                         for (let i = 1; i < activeNodes.length; i++) {
                             setHubMode(activeNodes[i], MODE_BYPASS);
@@ -503,8 +438,6 @@ app.registerExtension({
                         this.graph.setDirtyCanvas(true, false);
                     }
                 }, 100);
-                
-                console.log(`[${NODE_TITLE} ID: ${this.id}] refreshWidgets finished.`);
             };
 
             // Визначаємо дії для контекстного меню
@@ -518,30 +451,19 @@ app.registerExtension({
                  return actions;
             };
             node.logTargetNodeNames = function() { // Додаємо метод до екземпляра
-                console.log(`[${NODE_TITLE} ID: ${this.id}] Logging target node names...`);
                  const nodes = HubNodesService.getHubNodes();
-                 console.log(`   Found ${nodes.length} nodes via service:`);
-                 if (nodes.length > 0) {
-                      nodes.forEach(n => console.log(`   - Node ID: ${n.id}, Title: ${n.title}, Current mode: ${n.mode}`));
-                 } else {
-                      console.log(`   (No nodes found)`);
-                 }
             };
             
             // Оновлений метод для встановлення режиму всіх хабів
             node.setAllHubsMode = function(mode) { 
-                console.log(`[${NODE_TITLE} ID: ${this.id}] setAllHubsMode called with mode: ${mode}`);
                 const hubNodes = HubNodesService.getHubNodes();
                 
                 if (hubNodes.length === 0) {
-                    console.log(`[${NODE_TITLE} ID: ${this.id}] No hub nodes found to set mode.`);
                     return;
                 }
                 
                 if (mode === MODE_ALWAYS) {
                     // Активуємо тільки перший вузол, інші вимикаємо
-                    console.log(`[${NODE_TITLE} ID: ${this.id}] Enabling only the first hub node, disabling others.`);
-                    
                     hubNodes.forEach((node, index) => {
                         const newMode = index === 0 ? MODE_ALWAYS : MODE_BYPASS;
                         
@@ -554,30 +476,22 @@ app.registerExtension({
                     app.graph.setDirtyCanvas(true, true);
                 } else if (mode === MODE_BYPASS) {
                     // Якщо режим BYPASS, вимикаємо всі вузли
-                    console.log(`[${NODE_TITLE} ID: ${this.id}] Disabling all hub nodes.`);
-                    
-                    let changed = false;
                     hubNodes.forEach(node => {
                         if (node.mode !== MODE_BYPASS) {
                             node.mode = MODE_BYPASS;
                             updateAllBypasserWidgets(node);
-                            changed = true;
                         }
                     });
                     
-                    if (changed) {
-                        app.graph.setDirtyCanvas(true, true);
-                    }
+                    app.graph.setDirtyCanvas(true, true);
                 }
             };
             
             // Оновлений метод для перемикання вузлів
             node.toggleAllHubsMode = function() {
-                console.log(`[${NODE_TITLE} ID: ${this.id}] toggleAllHubsMode called`);
                 const hubNodes = HubNodesService.getHubNodes();
                 
                 if (hubNodes.length === 0) {
-                    console.log(`[${NODE_TITLE} ID: ${this.id}] No hub nodes found to toggle.`);
                     return;
                 }
                 
@@ -586,7 +500,6 @@ app.registerExtension({
                 
                 if (activeNodes.length === 0) {
                     // Якщо немає активних вузлів, активуємо перший
-                    console.log(`[${NODE_TITLE} ID: ${this.id}] No active nodes, activating the first one.`);
                     if (hubNodes.length > 0) {
                         const node = hubNodes[0];
                         node.mode = MODE_ALWAYS;
@@ -606,8 +519,6 @@ app.registerExtension({
                     const nextIndex = (currentIndex + 1) % hubNodes.length;
                     const nextNode = hubNodes[nextIndex];
                     
-                    console.log(`[${NODE_TITLE} ID: ${this.id}] Toggling from node ID ${activeNode.id} to node ID ${nextNode.id}`);
-                    
                     // Активуємо наступний вузол
                     nextNode.mode = MODE_ALWAYS;
                     updateAllBypasserWidgets(nextNode);
@@ -618,7 +529,6 @@ app.registerExtension({
 
             // Реєстрація/видалення самого bypasser'а в сервісі
             node.onAdded = function() {
-                 console.log(`[${NODE_TITLE} ID: ${this.id}] Bypasser node added to graph. Registering with service.`);
                  if (appInstance.HubNodesService) { // Перевіряємо наявність сервісу
                      appInstance.HubNodesService.registerBypasserNode(this);
                  } else {
@@ -626,22 +536,12 @@ app.registerExtension({
                  }
             };
             node.onRemoved = function() {
-                 console.log(`[${NODE_TITLE} ID: ${this.id}] Bypasser node removed from graph. Unregistering from service.`);
                   if (appInstance.HubNodesService) {
                       appInstance.HubNodesService.unregisterBypasserNode(this);
                   } else {
                       console.error(`[${NODE_TITLE} ID: ${this.id}] Cannot unregister bypasser, HubNodesService not found!`);
                   }
             };
-            
-            // Початкова реєстрація, якщо вузол вже існує при завантаженні
-            if (appInstance.HubNodesService) {
-                 appInstance.HubNodesService.registerBypasserNode(node);
-            } else {
-                 // Якщо сервіс ще не створено (малоймовірно, але можливо), 
-                 // реєстрація відбудеться пізніше через onAdded
-                 console.warn(`[${NODE_TITLE} ID: ${node.id}] Initial registration deferred, HubNodesService not yet available.`);
-            }
             
             // Початкове оновлення віджетів для цього конкретного вузла
              setTimeout(() => { if (node.refreshWidgets) node.refreshWidgets(); }, 50);
@@ -663,21 +563,17 @@ app.registerExtension({
                 node.pos[0] = visible_rect[0] + visible_rect[2] * 0.5 - node.size[0] * 0.5;
                 node.pos[1] = visible_rect[1] + visible_rect[3] * 0.5 - node.size[1] * 0.5;
 
-                console.log(`[${NODE_TITLE}] Node created from menu with ID: ${node.id}`);
-                
                 // Явно налаштуємо ноду після створення з меню
                 if (app.HubNodesService) {
                     // Отримуємо розширення
                     const extension = app.extensions.find(ext => ext.name === "MultiModel.ActiveModel.ServiceDriven");
                     if (extension) {
                         // Конфігуруємо ноду
-                        console.log(`[${NODE_TITLE}] Manually configuring node created from menu`);
                         extension.loadedGraphNode(node, app);
                         
                         // Оновлюємо віджети з затримкою
                         setTimeout(() => {
                             if (node.refreshWidgets) {
-                                console.log(`[${NODE_TITLE}] Refreshing widgets for node created from menu`);
                                 node.refreshWidgets();
                             }
                         }, 100);
@@ -688,10 +584,8 @@ app.registerExtension({
     },
 
     nodeRegistered(type, clazz) {
-        console.log(`[${NODE_TITLE}] nodeRegistered called for type: ${type}`);
         if (type === NODE_TYPE) {
             try {
-                console.log(`[${NODE_TITLE}] Running additional setup for our node type`);
                 ActiveModel.setUp(clazz);
             } catch (e) {
                 console.error(`[${NODE_TITLE}] Error in additional node setup:`, e);
@@ -701,16 +595,12 @@ app.registerExtension({
     
     // Додаємо обробники створення ноди для максимального покриття
     nodeCreated(node) {
-        console.log(`[${NODE_TITLE}] nodeCreated called for node type: ${node?.type || 'undefined'}, ID: ${node?.id || 'undefined'}`);
-        
         if (node && node.type === NODE_TYPE) {
-            console.log(`[${NODE_TITLE}] Our node created, configuring it...`);
             this.loadedGraphNode(node, app);
             
             // Запускаємо оновлення віджетів з затримкою
             setTimeout(() => {
                 if (node.refreshWidgets) {
-                    console.log(`[${NODE_TITLE}] Refreshing widgets after node creation`);
                     node.refreshWidgets();
                 }
             }, 100);
@@ -718,16 +608,12 @@ app.registerExtension({
     },
     
     onNodeAdded(node) {
-        console.log(`[${NODE_TITLE}] onNodeAdded callback called for node type: ${node?.type || 'undefined'}, ID: ${node?.id || 'undefined'}`);
-        
         if (node && node.type === NODE_TYPE) {
-            console.log(`[${NODE_TITLE}] Our node added via onNodeAdded, configuring it...`);
             this.loadedGraphNode(node, app);
             
             // Запускаємо оновлення віджетів з затримкою
             setTimeout(() => {
                 if (node.refreshWidgets) {
-                    console.log(`[${NODE_TITLE}] Refreshing widgets after node was added`);
                     node.refreshWidgets();
                 }
             }, 100);
