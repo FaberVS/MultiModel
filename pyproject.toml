@@ -1,0 +1,14 @@
+[project]
+name = "multimodel"
+description = "A collection of nodes and utilities to make working with multiple models, custom parameters, and prompt styles in ComfyUI easier, faster, and more flexible. You are welcome to use and adapt them for your own workflows!"
+version = "1.0.0"
+license = {file = "LICENSE"}
+
+[project.urls]
+Repository = "https://github.com/FaberVS/MultiModel"
+#  Used by Comfy Registry https://comfyregistry.org
+
+[tool.comfy]
+PublisherId = ""
+DisplayName = "MultiModel"
+Icon = ""
