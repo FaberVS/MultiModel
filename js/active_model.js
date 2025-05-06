@@ -245,6 +245,7 @@ app.registerExtension({
     name: "MultiModel.ActiveModel.ServiceDriven", // Оновлено назву розширення
 
     setup(appInstance) {
+        console.log("[MultiModel] ✅ Ініціалізовано HubNodesService у app.HubNodesService");
         // Реєструємо сервіс, щоб він був доступний іншим розширенням
         appInstance.HubNodesService = HubNodesService;
         HubNodesService.app = appInstance; 
@@ -367,24 +368,39 @@ app.registerExtension({
                          }
                          if (labelChanged) widgetsChanged = true;
 
-                         if (!existingWidget.callback) {
-                              existingWidget.callback = (value) => {
-                                  const nodeToChange = app.graph.getNodeById(targetNode.id);
-                                  if (nodeToChange) {
-                                      setHubMode(nodeToChange, value ? MODE_ALWAYS : MODE_BYPASS);
-                                  }
-                              };
-                              widgetsChanged = true;
-                         }
+                         // --- Виправлений callback: взаємовиключна логіка ---
+                         existingWidget.callback = (value) => {
+                             const hubNodes = HubNodesService.getHubNodes();
+                             const nodeToActivate = app.graph.getNodeById(targetNode.id);
+                             if (value) {
+                                 // Вимикаємо всі інші, вмикаємо лише обраний
+                                 hubNodes.forEach(n => {
+                                     const nObj = app.graph.getNodeById(n.id);
+                                     if (nObj) nObj.mode = (n.id === targetNode.id) ? MODE_ALWAYS : MODE_BYPASS;
+                                 });
+                             } else {
+                                 // Якщо вимикаємо, просто переводимо цей вузол у BYPASS
+                                 if (nodeToActivate) nodeToActivate.mode = MODE_BYPASS;
+                             }
+                             // Оновлюємо всі віджети
+                             if (this.refreshWidgets) this.refreshWidgets();
+                         };
+                         widgetsChanged = true;
                     } else {
                         this.addWidget(
                             "toggle", widgetName, widgetValue,
                             (value) => {
-                                const nodeToChange = app.graph.getNodeById(targetNode.id);
-                                if (nodeToChange) {
-                                    setHubMode(nodeToChange, value ? MODE_ALWAYS : MODE_BYPASS);
+                                const hubNodes = HubNodesService.getHubNodes();
+                                const nodeToActivate = app.graph.getNodeById(targetNode.id);
+                                if (value) {
+                                    hubNodes.forEach(n => {
+                                        const nObj = app.graph.getNodeById(n.id);
+                                        if (nObj) nObj.mode = (n.id === targetNode.id) ? MODE_ALWAYS : MODE_BYPASS;
+                                    });
+                                } else {
+                                    if (nodeToActivate) nodeToActivate.mode = MODE_BYPASS;
                                 }
-                                else this.refreshWidgets();
+                                if (this.refreshWidgets) this.refreshWidgets();
                             },
                             { on: "ON", off: "OFF" }
                         );
@@ -629,4 +645,139 @@ app.registerExtension({
     }
 });
 
-console.log(`[${NODE_TITLE}] JS file loaded`); 
+// --- ModelParamsPipe Notifier (інтегровано з ModelParamsNodeExt.js) ---
+(function(){
+    const TARGET_NODE_TYPE = "ModelParamsPipe";
+    app.registerExtension({
+        name: "MultiModel.ModelParamsPipeNode.Notifier",
+        newNodesDetected: false,
+        async setup() {
+            // Чекаємо на HubNodesService
+            const waitForHubNodesService = async (timeout = 5000) => {
+                const start = Date.now();
+                while (!app.HubNodesService) {
+                    if (Date.now() - start > timeout) {
+                        throw new Error("HubNodesService not found after waiting");
+                    }
+                    await new Promise(r => setTimeout(r, 100));
+                }
+            };
+            await waitForHubNodesService();
+            // Додаємо базову ініціалізацію та прямий пошук вузлів
+            const checkForGraph = () => {
+                if (app.graph) {
+                    if (app.graph.onNodeAdded && !app.graph._notifier_attached) {
+                        const origNodeAdded = app.graph.onNodeAdded;
+                        app.graph.onNodeAdded = function(node) {
+                            if (origNodeAdded) origNodeAdded.call(this, node);
+                            if (node.type === TARGET_NODE_TYPE) {
+                                const extension = app.extensions.find(ext => ext.name === "MultiModel.ModelParamsPipeNode.Notifier");
+                                if (extension) {
+                                    extension.setupNodeMonitoring(node);
+                                    if (app.HubNodesService) {
+                                        app.HubNodesService.notifyHubAdded(node);
+                                        if (typeof app.HubNodesService.forceUpdates === 'function') {
+                                            app.HubNodesService.forceUpdates();
+                                        } else if (typeof app.HubNodesService.updateWidgets === 'function') {
+                                            app.HubNodesService.updateWidgets();
+                                        } else if (app.HubNodesService.refreshUI && typeof app.HubNodesService.refreshUI === 'function') {
+                                            app.HubNodesService.refreshUI();
+                                        }
+                                    }
+                                }
+                            }
+                        };
+                        app.graph._notifier_attached = true;
+                    }
+                    setTimeout(() => {
+                        if (!app.graph || !app.graph._nodes) return;
+                        const targetNodes = app.graph._nodes.filter(node => node.type === TARGET_NODE_TYPE);
+                        const extension = app.extensions.find(ext => ext.name === "MultiModel.ModelParamsPipeNode.Notifier");
+                        if (!extension) return;
+                        for (const node of targetNodes) {
+                            extension.setupNodeMonitoring(node);
+                        }
+                        if (targetNodes.length > 0 && app.HubNodesService) {
+                            if (typeof app.HubNodesService.forceUpdates === 'function') {
+                                app.HubNodesService.forceUpdates();
+                            } else if (typeof app.HubNodesService.updateWidgets === 'function') {
+                                app.HubNodesService.updateWidgets();
+                            } else if (app.HubNodesService.refreshUI && typeof app.HubNodesService.refreshUI === 'function') {
+                                app.HubNodesService.refreshUI();
+                            }
+                        }
+                    }, 500);
+                } else {
+                    setTimeout(checkForGraph, 500);
+                }
+            };
+            checkForGraph();
+        },
+        setupNodeMonitoring(node, appInstance = app) {
+            if (!node) return false;
+            if (!node.__title_monitored) {
+                try {
+                    const originalTitle = node.title;
+                    if (!Object.getOwnPropertyDescriptor(node, '_monitored_title')) {
+                        Object.defineProperty(node, '_monitored_title', {
+                            value: originalTitle,
+                            writable: true
+                        });
+                    }
+                    const titleDescriptor = Object.getOwnPropertyDescriptor(node, 'title');
+                    if (!titleDescriptor || titleDescriptor.configurable) {
+                        Object.defineProperty(node, 'title', {
+                            get: function() { return this._monitored_title; },
+                            set: function(newTitle) {
+                                if (this._monitored_title === newTitle) return;
+                                this._monitored_title = newTitle;
+                                setTimeout(() => {
+                                    if (appInstance.HubNodesService) {
+                                        appInstance.HubNodesService.notifyHubRenamed(this);
+                                    } else {
+                                        console.error(`     HubNodesService not found! Cannot notify rename.`);
+                                    }
+                                }, 0);
+                            },
+                            enumerable: true,
+                            configurable: true
+                        });
+                    }
+                    node.__title_monitored = true;
+                } catch (error) {
+                    console.error(`[${TARGET_NODE_TYPE} Notifier] Error setting up title monitoring:`, error);
+                }
+            }
+            if (!node.onRemoved || !node.onRemoved.__isNotifierOverridden) {
+                try {
+                    const originalOnRemoved = node.onRemoved;
+                    node.onRemoved = function() {
+                        if (appInstance.HubNodesService) {
+                            appInstance.HubNodesService.notifyHubRemoved(this);
+                        } else {
+                            console.error(`     HubNodesService not found! Cannot notify removal.`);
+                        }
+                        if (originalOnRemoved) {
+                            originalOnRemoved.apply(this, arguments);
+                        }
+                    };
+                    node.onRemoved.__isNotifierOverridden = true;
+                } catch (error) {
+                    console.error(`[${TARGET_NODE_TYPE} Notifier] Error overriding onRemoved:`, error);
+                }
+            }
+            return true;
+        },
+        async nodeCreated(node) {},
+        async onNodeAdded(node) {},
+        async loadedGraphNode(node, appInstance) {
+            if (!node) return;
+            if (node.type === TARGET_NODE_TYPE) {
+                this.setupNodeMonitoring(node, appInstance);
+            }
+        }
+    });
+})();
+
+console.log(`[${NODE_TITLE}] JS file loaded`);
+console.log("[MultiModel] ✅ Завантажено active_model.js, HubNodesService буде доступний після ініціалізації."); 

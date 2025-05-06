@@ -20,215 +20,172 @@ app.registerExtension({
   async beforeRegisterNodeDef(nodeType, nodeData, app) {
     // Compare with the class name
     if (nodeData.name === nodeClassName) { 
-      console.log(`[MultiModel] Patching ${nodeClassName}`);
+      console.log(`[ModelSwitch] Patching ${nodeClassName}`);
 
-      const onNodeCreated = nodeType.prototype.onNodeCreated;
-      nodeType.prototype.onNodeCreated = function() {
-        onNodeCreated?.apply(this, arguments);
-        console.log(`[MultiModel] ${nodeClassName} created`);
+      // --- ФУНКЦІЇ ---
+      function handleModeSwitch(modeWidget, indexWidget, app, value) {
+        const updateVisibility = (modeValue) => {
+          if (indexWidget) {
+            const shouldBeHidden = (modeValue !== "index");
+            indexWidget.hidden = shouldBeHidden;
+            if (app.graph) app.graph.setDirtyCanvas(true, false); 
+          }
+        };
+        updateVisibility(value ?? modeWidget.value);
+        // Перевизначаємо callback
+        const originalModeCallback = modeWidget.callback;
+        modeWidget.callback = (val) => {
+          originalModeCallback?.apply(modeWidget, [val]); 
+          updateVisibility(val);
+        };
+      }
 
+      function updateDynamicInputIndexes(node) {
+        console.log('[ModelSwitch] Оновлення індексів динамічних входів');
+        const prefix = node._input_prefix || "input_";
+        let dynamicInputs = node.inputs ? node.inputs.filter(inp => inp.name !== "mode" && inp.name !== "index") : [];
+        // Перейменовуємо динамічні входи по порядку
+        for (let i = 0; i < dynamicInputs.length; i++) {
+            const expectedName = `${prefix}${i + 1}`;
+            if (dynamicInputs[i].name !== expectedName) {
+                console.log(`[ModelSwitch] Перейменування входу ${dynamicInputs[i].name} -> ${expectedName}`);
+                dynamicInputs[i].name = expectedName;
+            }
+        }
+        let maxIdx = dynamicInputs.length > 0 ? dynamicInputs.length : 1;
+        node.last_connected = -1;
+        for (let i = 0; i < dynamicInputs.length; i++) {
+            const inp = dynamicInputs[i];
+            if (inp.link != null) node.last_connected = node.inputs.indexOf(inp);
+        }
+        node._last_input_index = maxIdx;
+        // Останній порожній динамічний вхід
+        let lastEmptyIdx = -1;
+        for (let i = node.inputs.length - 1; i >= 0; i--) {
+            if (node.inputs[i].name !== "mode" && node.inputs[i].name !== "index" && node.inputs[i].name.startsWith(prefix) && node.inputs[i].link == null) {
+                lastEmptyIdx = i;
+                break;
+            }
+        }
+        node.last_empty = lastEmptyIdx;
+      }
+
+      function updateDynamicInputsOnConnect(node, type, index, connected) {
+        if (node._updatingInputs) return;
+        node._updatingInputs = true;
+        const changedInput = node.inputs[index];
+        const inputName = changedInput?.name;
+        const isDynamic = inputName && inputName !== "mode" && inputName !== "index";
+        if (!isDynamic) {
+            node._updatingInputs = false;
+            return;
+        }
+        if (connected) {
+            console.log(`[ModelSwitch] Вхід "${inputName}" (${index}) підключено`);
+            if (index === node.last_empty) {
+                const prefix = node._input_prefix || "input_";
+                let dynamicInputs = node.inputs.filter(inp => inp.name !== "mode" && inp.name !== "index");
+                node.addInput(`${prefix}${dynamicInputs.length + 1}`, "*");
+                console.log('[ModelSwitch] Додаємо ще один порожній динамічний вхід');
+                updateDynamicInputIndexes(node);
+            } else {
+                console.log('[ModelSwitch] Підключено не до останнього вільного входу, новий не додаємо');
+            }
+        } else {
+            console.log(`[ModelSwitch] Вхід "${inputName}" (${index}) відключено`);
+            // Якщо відключено від останнього підключеного, прибираємо цей вхід, але лише якщо порожніх динамічних входів більше одного
+            let dynamicInputs = node.inputs.filter(inp => inp.name !== "mode" && inp.name !== "index");
+            let emptyInputs = dynamicInputs.filter(inp => inp.link == null);
+            if (index === node.last_connected && emptyInputs.length > 1) {
+                node.removeInput(index);
+                console.log('[ModelSwitch] Відключено від останнього підключеного — видаляємо цей вхід');
+                updateDynamicInputIndexes(node);
+            } else if (index === node.last_connected) {
+                console.log('[ModelSwitch] Це останній порожній вхід — не видаляємо');
+            } else {
+                console.log('[ModelSwitch] Відключено не від останнього підключеного — нічого не робимо');
+            }
+        }
+        node._updatingInputs = false;
+      }
+
+      function handleNodeCreation(node, app) {
         // --- Віджети ---
-        const modeWidget = this.widgets.find(w => w.name === "mode");
-        const indexWidget = this.widgets.find(w => w.name === "index");
+        const modeWidget = node.widgets.find(w => w.name === "mode");
+        const indexWidget = node.widgets.find(w => w.name === "index");
         if (!modeWidget) {
-            console.error(`[MultiModel] ${nodeClassName}: 'mode' widget not found! Cannot apply dynamic visibility.`);
+            console.error(`[ModelSwitch] ${nodeClassName}: 'mode' widget not found! Cannot apply dynamic visibility.`);
             return;
         }
         if (!indexWidget) {
-            console.error(`[MultiModel] ${nodeClassName}: 'index' widget not found! Cannot apply dynamic visibility.`);
+            console.error(`[ModelSwitch] ${nodeClassName}: 'index' widget not found! Cannot apply dynamic visibility.`);
             return;
         }
-        const updateVisibility = (modeValue) => {
-            if (indexWidget) {
-                 const shouldBeHidden = (modeValue !== "index");
-                 indexWidget.hidden = shouldBeHidden;
-                 app.graph.setDirtyCanvas(true, false); 
-            }
-        };
-        const originalModeCallback = modeWidget.callback;
-        modeWidget.callback = (value) => {
-            originalModeCallback?.apply(modeWidget, [value]); 
-            updateVisibility(value);
-        };
-        updateVisibility(modeWidget.value);
+        handleModeSwitch(modeWidget, indexWidget, app);
 
         // --- Динамічні входи (last_empty, last_connected) ---
-        this._input_prefix = "input_";
-        const prefix = this._input_prefix;
-        this._last_input_index = 1;
-        this.last_empty = 0;
-        this.last_connected = null;
-        // Якщо входів немає або немає input_1 — додаємо перший вхід
-        let hasInput1 = false;
-        if (this.inputs && this.inputs.length > 0) {
-            for (let i = 0; i < this.inputs.length; i++) {
-                if (this.inputs[i].name === `${prefix}1`) {
-                    hasInput1 = true;
-                    break;
-                }
-            }
+        node._input_prefix = "input_";
+        const prefix = node._input_prefix;
+        let dynamicInputs = node.inputs ? node.inputs.filter(inp => inp.name !== "mode" && inp.name !== "index") : [];
+        console.log('[ModelSwitch] dynamicInputs:', dynamicInputs.map(inp => ({name: inp.name, link: inp.link})));
+        // --- Якщо входів немає, додаємо перший ---
+        if (dynamicInputs.length === 0) {
+            console.log('[ModelSwitch] Входів немає, додаємо перший');
+            node.addInput(`${prefix}1`, "*");
+            dynamicInputs = node.inputs.filter(inp => inp.name !== "mode" && inp.name !== "index");
         }
-        if (!hasInput1) {
-            this.addInput(`${prefix}1`, "*");
-        }
-        // Оновлюємо індекси для існуючих входів
-        if (this.inputs && this.inputs.length > 0) {
-            let maxIdx = 1;
-            for (let i = 0; i < this.inputs.length; i++) {
-                const inp = this.inputs[i];
-                if (inp.name && inp.name.startsWith(prefix)) {
-                    const idx = parseInt(inp.name.replace(prefix, ""), 10);
-                    if (!isNaN(idx) && idx > maxIdx) maxIdx = idx;
-                    if (inp.link != null) this.last_connected = i;
-                }
-            }
-            this._last_input_index = maxIdx;
-            this.last_empty = this.inputs.length - 1;
-        }
-        // --- Зберігаємо попередній стан links ---
-        this._prevLinks = [];
-        for (let i = 0; i < this.inputs.length; i++) {
-            this._prevLinks[i] = this.inputs[i].link;
-        }
-        app.graph.setDirtyCanvas(true, true);
-        // this.updateInputs(); // закоментовано, бо ця функція більше не використовується
 
-        // --- Динамічна логіка підключень (last_empty, last_connected) ---
-        const onConnectionsChange = nodeType.prototype.onConnectionsChange;
-        nodeType.prototype.onConnectionsChange = function(type, index, connected, link_info, slot) {
-          onConnectionsChange?.apply(this, arguments);
-          if (this._updatingInputs) return;
-          if (type !== 1) return;
-          const prefix = this._input_prefix || "input_";
-          const wasLinked = this._prevLinks && this._prevLinks[index];
-          const isLinked = this.inputs[index] && this.inputs[index].link;
-          // Додаємо новий вхід тільки якщо було null, а стало не null
-          if (
-              connected &&
-              index === this.last_empty &&
-              wasLinked == null &&
-              isLinked != null
-          ) {
-            this._updatingInputs = true;
-            // --- Коректна нумерація ---
-            let maxIdx = 0;
-            for (let i = 0; i < this.inputs.length; i++) {
-                const inp = this.inputs[i];
-                if (inp.name && inp.name.startsWith(prefix)) {
-                    const idx = parseInt(inp.name.replace(prefix, ""), 10);
-                    if (!isNaN(idx) && idx > maxIdx) maxIdx = idx;
+        let connectedInputs = dynamicInputs.filter(inp => inp.link != null);
+        let emptyInputs = dynamicInputs.filter(inp => inp.link == null);
+        console.log('[ModelSwitch] connectedInputs:', connectedInputs);
+        console.log('[ModelSwitch] emptyInputs:', emptyInputs);
+        if (emptyInputs.length === 0) {
+                console.log('[ModelSwitch] Додаємо новий порожній вхід');
+                node.addInput(`${prefix}${connectedInputs.length + 1}`, "*");
+                dynamicInputs = node.inputs.filter(inp => inp.name !== "mode" && inp.name !== "index");
+        } else if (emptyInputs.length > 1) {
+                console.log('[ModelSwitch] Видаляємо зайві порожні входи');
+                for (let i = node.inputs.length - 1; i >= 0; i--) {
+                    if (node.inputs[i].name !== "mode" && node.inputs[i].name !== "index" && node.inputs[i].link == null && emptyInputs.length > 1) {
+                        node.removeInput(i);
+                        emptyInputs.pop();
+                    }
                 }
-            }
-            this._last_input_index = maxIdx + 1;
-            this.addInput(`${prefix}${this._last_input_index}`, "*");
-            this.last_connected = this.last_empty;
-            this.last_empty = this.inputs.length - 1;
-            app.graph.setDirtyCanvas(true, true);
-            this._updatingInputs = false;
-          }
-          // Якщо відключили будь-який вхід
-          if (!connected) {
-            // Знайти новий last_connected
-            let new_last_connected = null;
-            for (let i = this.inputs.length - 1; i >= 0; i--) {
-              if (this.inputs[i].name.startsWith(prefix) && this.inputs[i].link != null) {
-                new_last_connected = i;
-                break;
-              }
-            }
-            // Видалити всі порожні входи після last_connected, але залишити один (last_empty)
-            let removed = false;
-            for (let i = this.inputs.length - 1; i > new_last_connected + 1; i--) {
-              if (this.inputs[i].name.startsWith(prefix) && this.inputs[i].link == null) {
-                this.removeInput(i);
-                removed = true;
-              }
-            }
-            this.last_connected = new_last_connected;
-            this.last_empty = this.inputs.length - 1;
-            // Якщо останній вхід зайнятий, додаємо ще один порожній
-            if (
-              this.inputs.length === 0 ||
-              (this.inputs[this.inputs.length - 1].name.startsWith(prefix) && this.inputs[this.inputs.length - 1].link != null)
-            ) {
-              // --- Коректна нумерація ---
-              let maxIdx = 0;
-              for (let i = 0; i < this.inputs.length; i++) {
-                  const inp = this.inputs[i];
-                  if (inp.name && inp.name.startsWith(prefix)) {
-                      const idx = parseInt(inp.name.replace(prefix, ""), 10);
-                      if (!isNaN(idx) && idx > maxIdx) maxIdx = idx;
-                  }
-              }
-              this._last_input_index = maxIdx + 1;
-              this.addInput(`${prefix}${this._last_input_index}`, "*");
-              this.last_empty = this.inputs.length - 1;
-              removed = true;
-            }
-            if (removed) {
-              app.graph.setDirtyCanvas(true, true);
-            }
-          }
-          // --- Оновлюємо _prevLinks після всіх змін ---
-          this._prevLinks = [];
-          for (let i = 0; i < this.inputs.length; i++) {
-              this._prevLinks[i] = this.inputs[i].link;
-          }
-        };
-        // --- Закоментовано стару логіку ---
-        /*
-        const onConnectionsChange = nodeType.prototype.onConnectionsChange;
-        nodeType.prototype.onConnectionsChange = function(type, index, connected, link_info, slot) {
-          onConnectionsChange?.apply(this, arguments);
-          this.scheduleUpdateInputs();
-        };
-        nodeType.prototype.scheduleUpdateInputs = debounce(function() {
-          this.updateInputs();
-        }, 100); 
-        nodeType.prototype.updateInputs = function() {
-          const prefix = "input_";
-          const minInputs = 1;
-          // --- Гарантуємо перший слот ---
-          const dynamicInputs = this.inputs.filter(inp => inp.name && inp.name.startsWith(prefix));
-          if (dynamicInputs.length === 0) {
-              const name = `${prefix}1`;
-              this.addInput(name, "*");
-              app.graph.setDirtyCanvas(true, true);
-              return;
-          }
-          let lastConnectedIndex = -1;
-          for (let i = 0; i < this.inputs.length; i++) {
-            if (this.inputs[i].name.startsWith(prefix) && this.inputs[i].link != null) {
-              lastConnectedIndex = i;
-            }
-          }
-          let removalIndex = this.inputs.length - 1;
-          while (removalIndex > lastConnectedIndex && this.inputs.length > minInputs && removalIndex >= 0) {
-            if (this.inputs[removalIndex].name.startsWith(prefix) && this.inputs[removalIndex].link == null) {
-              if(this.inputs.length > minInputs) {
-                 this.removeInput(removalIndex);
-              } else {
-                  break;
-              }
-            } else {
-                break;
-            }
-            removalIndex--;
-          }
-          // Add a new input if the last one is connected OR if there are no inputs yet
-          if (dynamicInputs.length > 0 && this.inputs[this.inputs.length - 1].name.startsWith(prefix) && this.inputs[this.inputs.length - 1].link != null) {
-            // Знаходимо найбільший індекс серед динамічних входів
-            const dynamicIndexes = dynamicInputs
-              .map(inp => parseInt(inp.name.replace(prefix, ""), 10))
-              .filter(num => !isNaN(num));
-            const maxIndex = dynamicIndexes.length > 0 ? Math.max(...dynamicIndexes) : 0;
-            const nextIndex = maxIndex + 1;
-            const name = `${prefix}${nextIndex}`;
-            this.addInput(name, "*");
-          }
-          app.graph.setDirtyCanvas(true, true);
-        };
-        */
+                dynamicInputs = node.inputs.filter(inp => inp.name !== "mode" && inp.name !== "index");
+        }
+        console.log('[ModelSwitch] dynamicInputs після додавання/видалення:', dynamicInputs.map(inp => ({name: inp.name, link: inp.link})));
+        updateDynamicInputIndexes(node);
+        // --- Зберігаємо попередній стан links ---
+        node._prevLinks = [];
+        for (let i = 0; i < node.inputs.length; i++) {
+            node._prevLinks[i] = node.inputs[i].link;
+        }
+        if (app.graph) app.graph.setDirtyCanvas(true, true);
+      }
+
+      function handleConnectionsChange(node, type, index, connected, link_info, slot, app) {
+        updateDynamicInputsOnConnect(node, type, index, connected);
+        node._prevLinks = [];
+        for (let i = 0; i < node.inputs.length; i++) {
+            node._prevLinks[i] = node.inputs[i].link;
+        }
+      }
+
+      // --- Патчимо onNodeCreated ---
+      const onNodeCreated = nodeType.prototype.onNodeCreated;
+      nodeType.prototype.onNodeCreated = function() {
+        onNodeCreated?.apply(this, arguments);
+        console.log(`[ModelSwitch] ${nodeClassName} created`);
+        setTimeout(() => {
+          handleNodeCreation(this, app);
+        }, 500);
+      };
+
+      // --- Патчимо onConnectionsChange ---
+      const onConnectionsChange = nodeType.prototype.onConnectionsChange;
+      nodeType.prototype.onConnectionsChange = function(type, index, connected, link_info, slot) {
+        onConnectionsChange?.apply(this, arguments);
+        handleConnectionsChange(this, type, index, connected, link_info, slot, app);
       };
     }
   },
