@@ -12,7 +12,10 @@ import os # Додано для роботи з шляхами
 from server import PromptServer # Додано
 from aiohttp import web # Додано
 
-import git
+try:
+    import git
+except ImportError:
+    git = None
 from typing import Any, Dict
 import yaml
 
@@ -27,10 +30,12 @@ class AlwaysEqualProxy(str):
 comfy_ui_revision = None
 
 def get_comfyui_revision() -> Any:
+    if git is None:
+        return "Unknown"
     try:
         repo = git.Repo(os.path.dirname(folder_paths.__file__))
         return len(list(repo.iter_commits('HEAD')))
-    except:
+    except Exception:
         return "Unknown"
 
 def compare_revision(num: int) -> bool:
@@ -39,7 +44,6 @@ def compare_revision(num: int) -> bool:
         comfy_ui_revision = get_comfyui_revision()
     return comfy_ui_revision == "Unknown" or int(comfy_ui_revision) >= num
 
-WEB_DIRECTORY = "js" # Додано для JS файлу
 
 MAX_FLOW_NUM = 10
 lazy_options = {"lazy": True}
@@ -83,7 +87,6 @@ def get_style_names(style_filename):
                 # Додаємо імена, пропускаючи порожні або None
                 names.extend([item.get("name") for item in data if isinstance(item, dict) and item.get("name")])
     except Exception as e:
-        print(f"Error loading style names from {filepath}: {e}")
         return [] # Повертаємо порожній список при помилці
         
     # Видаляємо дублікати (якщо є) і сортуємо. НЕ додаємо "None".
@@ -178,7 +181,7 @@ class ModelParamsPipeNode:
         }
         pipe_data = (model, clip_skipped, final_vae, combined_params)
         
-        # Convert sampler_name and scheduler to string only for display purposes
+        # Return sampler_name and scheduler as values compatible with KSampler enum inputs
         return (model, clip_skipped, final_vae, steps, cfg, 
                 sampler_name, scheduler,
                 safe_positive_tag, safe_negative_tag, pipe_data)
@@ -189,7 +192,7 @@ class ParamsPipeUnpack:
     def INPUT_TYPES(cls):
         return { "required": { "params_pipe": (PIPE_TYPE_NAME,), } }
 
-    # Змінюємо типи повернення для sampler_name та scheduler
+    # Повертаємо типи для sampler_name та scheduler як enum-значення KSampler
     RETURN_TYPES = ("MODEL", "CLIP", "VAE", "INT", "FLOAT",
                     comfy.samplers.KSampler.SAMPLERS, comfy.samplers.KSampler.SCHEDULERS,
                     "STRING", "STRING", PIPE_TYPE_NAME)
@@ -214,9 +217,9 @@ class ParamsPipeUnpack:
         positive_tag = params_dict.get("positive_tag", "")
         negative_tag = params_dict.get("negative_tag", "")
         
-        # Повертаємо оригінальні об'єкти, а не їх рядкові представлення
+        # Повертаємо значення, сумісні з enum-входами KSampler
         return (model, clip, vae, steps, cfg, 
-                sampler_name, scheduler,  # Без конвертації в str
+                sampler_name, scheduler,
                 positive_tag, negative_tag, params_pipe)
 
 # --- Node 3: ListSelectorNode ---
@@ -355,7 +358,13 @@ class PromptBuilderNode:
     @classmethod
     def INPUT_TYPES(cls):
         style_files = get_style_files() # Ця функція все ще повертає список з "None"
-        # Ми більше не використовуємо get_style_names для початкового списку тут
+        # Отримуємо всі можливі імена стилів для всіх файлів
+        all_style_names = []
+        for style_file in style_files:
+            if style_file != "None":
+                all_style_names.extend(get_style_names(style_file))
+        # Додаємо порожній рядок на початок списку
+        all_style_names = [""] + list(set(all_style_names))
 
         return {
             "required": {
@@ -366,8 +375,8 @@ class PromptBuilderNode:
             "optional": {
                 "from_IMG2TXT": ("STRING", {"multiline": True, "default": "", "forceInput": True}), 
                 "style_file": (style_files, ), 
-                # Змінюємо default на порожній рядок, оскільки "None" більше не буде опцією
-                "style_name": ("STRING", {"default": "", "multiline": False}), 
+                # Тепер передаємо повний список можливих імен стилів
+                "style_name": (all_style_names, {"default": ""}), 
             }
         }
 
@@ -381,7 +390,7 @@ class PromptBuilderNode:
         # Використовуємо *args, **kwargs, щоб уникнути помилок з аргументами
         return float("NaN") 
 
-    def build_prompts(self, params_pipe, positive_base, negative_base, from_IMG2TXT=None, style_file="None", style_name="None"):
+    def build_prompts(self, params_pipe, positive_base, negative_base, from_IMG2TXT=None, style_file="None", style_name=""):
         # 1. Розпаковка params_pipe
         if not isinstance(params_pipe, tuple) or len(params_pipe) != 4:
             raise ValueError("PromptBuilderNode: Invalid params_pipe structure.")
@@ -404,7 +413,7 @@ class PromptBuilderNode:
         style_negative_prompt = "" # Default negative from style
 
         # 3. Обробка стилю (отримання шаблонів)
-        if style_file != "None" and style_name != "None":
+        if style_file and style_file != "None" and style_name:
             styles_dir = get_styles_dir()
             filepath = os.path.join(styles_dir, style_file)
             try:
@@ -491,31 +500,19 @@ class ActiveModel:
 # --- API Endpoint for Dynamic Styles ---
 @PromptServer.instance.routes.post('/multi_model/get_style_names')
 async def get_style_names_endpoint(request):
-    # print("--- API Endpoint /multi_model/get_style_names called ---") # Keep this commented for less verbose logs
     try:
         json_data = await request.json()
         filename = json_data.get('filename')
 
-        if filename is None: # Check explicitly for None, as empty string might be valid (though unlikely here)
-            print("API Error: Filename not provided in request")
+        if filename is None:
             return web.Response(status=400, text="Filename not provided")
 
         style_names = get_style_names(filename)
-        # print(f"Returning style names for {filename}: {style_names}") # Keep commented
         return web.json_response({"style_names": style_names})
     
     except json.JSONDecodeError as json_err:
-        try:
-             raw_body = await request.read()
-             body_text = raw_body.decode('utf-8', errors='ignore')
-        except Exception:
-             body_text = "[Could not read body]"
-        print(f"API Error: Invalid JSON received. Body: {body_text}. Error: {json_err}")
         return web.Response(status=400, text=f"Invalid JSON received: {json_err}")
     except Exception as e:
-        print(f"API Error in get_style_names_endpoint: {e}")
-        import traceback
-        print(traceback.format_exc())
         return web.Response(status=500, text=f"Internal server error: {e}")
 
 # --- Helper definitions for MySwitchIndex ---
